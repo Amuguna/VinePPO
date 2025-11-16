@@ -1,6 +1,6 @@
 local num_mc_rollouts = 9;
 
-(import 'qwen2_5_7b_ppo_MATH.jsonnet')
+(import 'llama_3_1_8b_ppo_MATH.jsonnet')
 + (import 'trainers/no_critic.jsonnet')
 + {
     episode_generator+: {
@@ -14,8 +14,8 @@ local num_mc_rollouts = 9;
         value_estimation_inference_strategy+: {
             type: 'cot',
 
-            max_concurrent_programs: 512,
-            max_concurrent_generations: 512,
+            max_concurrent_programs: 256,
+            max_concurrent_generations: 256,
 
             samples: num_mc_rollouts,
             max_depth: 100,  // Deprecated parameter. Doesn't do anything.

@@ -464,18 +464,43 @@ class OnPolicyEpisodeGenerator(EpisodeGenerator):
             ),
         )
 
-        results = inference_strategy.generate(dataset_shard)
-        results.save_to_disk(str(infer_result_path))
-        vllm_server.stop_server()
-        del results
-        del vllm_server
-        release_memory()
+        # results = inference_strategy.generate(dataset_shard)
+        # results.save_to_disk(str(infer_result_path))
+        # vllm_server.stop_server()
+        # del results
+        # del vllm_server
+        # release_memory()
 
-        vllm_cleanup_fn()
-        release_memory()
+        # vllm_cleanup_fn()
+        # release_memory()
+
+        # Ensure the external vLLM server is always torn down even if inference fails
+        try:
+            results = inference_strategy.generate(dataset_shard)
+            results.save_to_disk(str(infer_result_path))
+        finally:
+            try:
+                vllm_server.stop_server()
+            except Exception as e:
+                logger.error(f"Failed to stop vLLM server cleanly: {e}")
+            # Help GC and allocator to release GPU memory back to the pool/driver
+            try:
+                del vllm_server
+            except Exception:
+                pass
+            release_memory()
+            try:
+                vllm_cleanup_fn()
+            except Exception as e:
+                logger.error(f"vLLM cleanup function raised: {e}")
+            release_memory()
+
+        # Reload saved results from disk to keep memory usage minimal
+        del results
 
         results = Dataset.load_from_disk(str(results_root_dir / "results_ds"))
         return results
+
 
     def _generate_episodes(
         self, inference_results: Dataset, iteration: int

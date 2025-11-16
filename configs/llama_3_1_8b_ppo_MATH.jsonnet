@@ -70,7 +70,7 @@ local sampling_temperature = 0.6;
                 node_key_name: 'text',
             },
 
-            guidance_llm: (import 'guidance_llms/qwen2_5_7b.jsonnet') + { api_base: 'none' },
+            guidance_llm: (import 'guidance_llms/llama3_1_8b_instruct.jsonnet') + { api_base: 'none' },
 
             question_field: 'query',
             question_template: $.prompt_library.tree.question_template,

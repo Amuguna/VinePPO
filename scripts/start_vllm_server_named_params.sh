@@ -30,16 +30,66 @@ done
 
 export VLLM_HF_FOLDER_CACHE_FILE=${HF_HOME:-$(pwd)}/vllm_hf_folder_cache.json
 
-CUDA_VISIBLE_DEVICES=$GPU_IDX python -m vllm.entrypoints.openai.api_server \
-    --model "$MODEL" \
-    --host 0.0.0.0 \
-    --port "$PORT" \
-    --seed "$SEED" \
-    --swap-space "$SWAP_SPACE" \
-    --dtype bfloat16 \
-    --gpu-memory-utilization "$GPU_MEM_UTILIZATION" \
-    --max-num-seqs "$MAX_NUM_SEQS" \
-    $(if [ "$ENABLE_PREFIX_CACHING" = true ]; then echo "--enable-prefix-caching"; fi) \
-    $(if [ "$DISABLE_SLIDING_WINDOW" = true ]; then echo "--disable-sliding-window"; fi) \
-    $(if [ -n "$MAX_MODEL_LEN" ]; then echo "--max-model-len $MAX_MODEL_LEN"; fi) \
-    $(if [ "$DISABLE_FRONTEND_MULTIPROCESSING" = true ]; then echo "--disable-frontend-multiprocessing"; fi)
+# Replace the shell with the python process so the parent PID is the server itself
+# Note: set the env var before exec; `exec VAR=val cmd` is not parsed as an assignment in bash
+# export CUDA_VISIBLE_DEVICES=$GPU_IDX
+# exec python -m vllm.entrypoints.openai.api_server \
+#     --model "$MODEL" \
+#     --host 0.0.0.0 \
+#     --port "$PORT" \
+#     --seed "$SEED" \
+#     --swap-space "$SWAP_SPACE" \
+#     --dtype bfloat16 \
+#     --gpu-memory-utilization "$GPU_MEM_UTILIZATION" \
+#     --max-num-seqs "$MAX_NUM_SEQS" \
+#     $(if [ "$ENABLE_PREFIX_CACHING" = true ]; then echo "--enable-prefix-caching"; fi) \
+#     $(if [ "$DISABLE_SLIDING_WINDOW" = true ]; then echo "--disable-sliding-window"; fi) \
+#     $(if [ -n "$MAX_MODEL_LEN" ]; then echo "--max-model-len $MAX_MODEL_LEN"; fi) \
+#     $(if [ "$DISABLE_FRONTEND_MULTIPROCESSING" = true ]; then echo "--disable-frontend-multiprocessing"; fi)
+
+# Replace the shell with the python process so the parent PID is the server itself
+# CUDA_VISIBLE_DEVICES=$GPU_IDX python -m vllm.entrypoints.openai.api_server \
+#     --model "$MODEL" \
+#     --host 0.0.0.0 \
+#     --port "$PORT" \
+#     --seed "$SEED" \
+#     --swap-space "$SWAP_SPACE" \
+#     --dtype bfloat16 \
+#     --gpu-memory-utilization "$GPU_MEM_UTILIZATION" \
+#     --max-num-seqs "$MAX_NUM_SEQS" \
+#     $(if [ "$ENABLE_PREFIX_CACHING" = true ]; then echo "--enable-prefix-caching"; fi) \
+#     $(if [ "$DISABLE_SLIDING_WINDOW" = true ]; then echo "--disable-sliding-window"; fi) \
+#     $(if [ -n "$MAX_MODEL_LEN" ]; then echo "--max-model-len $MAX_MODEL_LEN"; fi) \
+#     $(if [ "$DISABLE_FRONTEND_MULTIPROCESSING" = true ]; then echo "--disable-frontend-multiprocessing"; fi)
+
+export CUDA_VISIBLE_DEVICES=$GPU_IDX
+
+cmd=(
+    python -m vllm.entrypoints.openai.api_server
+    --model "$MODEL"
+    --host 0.0.0.0
+    --port "$PORT"
+    --seed "$SEED"
+    --swap-space "$SWAP_SPACE"
+    --dtype bfloat16
+    --gpu-memory-utilization "$GPU_MEM_UTILIZATION"
+    --max-num-seqs "$MAX_NUM_SEQS"
+)
+
+if [ "$ENABLE_PREFIX_CACHING" = true ]; then
+    cmd+=(--enable-prefix-caching)
+fi
+
+if [ "$DISABLE_SLIDING_WINDOW" = true ]; then
+    cmd+=(--disable-sliding-window)
+fi
+
+if [ -n "$MAX_MODEL_LEN" ]; then
+    cmd+=(--max-model-len "$MAX_MODEL_LEN")
+fi
+
+if [ "$DISABLE_FRONTEND_MULTIPROCESSING" = true ]; then
+    cmd+=(--disable-frontend-multiprocessing)
+fi
+
+exec "${cmd[@]}"

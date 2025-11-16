@@ -2,7 +2,7 @@ CONFIGSTR="configs/llama_3_1_8b_vineppo_MATH.jsonnet"
 APP_DIRECTORY="/ext_hdd/yschoi/reasoning_math/vineppo"
 
 export APP_SEED="2746318213"
-export WANDB_RUN_ID="vineppo_llama8b" # Optional
+export WANDB_RUN_ID="vineppo_llama8b_3" # Optional
 
 export MASTER_ADDR=127.0.0.1
 export MASTER_PORT=29611

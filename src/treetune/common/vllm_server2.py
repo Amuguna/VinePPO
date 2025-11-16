@@ -280,129 +280,46 @@ class VLLMServer(FromParams):
         # Redirect both stdout and stderr to the log file if specified
         if log_path is not None:
             with log_path.open("w") as f:
-                self.process = subprocess.Popen(command, stdout=f, stderr=f, start_new_session=True,)
+                self.process = subprocess.Popen(command, stdout=f, stderr=f)
         else:
-            self.process = subprocess.Popen(command, start_new_session=True,)
+            self.process = subprocess.Popen(command)
+
     def stop_server(self):
-        """
-        Stop the vLLM server and all of its child processes (workers).
-
-        This implementation:
-        - Looks up the server process from self.process.pid
-        - Recursively collects all child processes (multiprocessing workers)
-        - Sends SIGTERM first, waits, then SIGKILL if still alive
-        - Optionally runs find_and_kill_process(self.port) as a last fallback
-        """
-        if self.process is None:
-            logger.info("Server is not running (self.process is None).")
+        if self.process is None or self.process.poll() is not None:
+            logger.info("Server is not running.")
             return
 
-        pid = self.process.pid
+        self.process.kill()
+        time.sleep(3)
 
-        # 이미 종료된 경우
-        if self.process.poll() is not None:
-            logger.info("Server process already exited.")
-            self.process = None
-            return
-
-        logger.info(f"Stopping vLLM server (pid={pid}, port={self.port})")
-
+        # Use pkill to kill processes matching the pattern
+        pattern = f"vllm.entrypoints.openai.api_server.*--port {self.port}"
         try:
-            parent = psutil.Process(pid)
-        except psutil.NoSuchProcess:
-            logger.info("Server process does not exist anymore.")
-            self.process = None
-            return
-
-        # parent(쉘 스크립트/엔트리포인트) + 모든 자식(spawn_main 워커들) 수집
-        children = parent.children(recursive=True)
-        procs = children + [parent]
-
-        logger.info(
-            "Terminating vLLM process tree: "
-            + ", ".join(str(p.pid) for p in procs)
-        )
-
-        # 1) 우선 terminate (SIGTERM) 시도
-        for p in procs:
-            try:
-                p.terminate()
-            except psutil.NoSuchProcess:
-                pass
-            except Exception as e:
-                logger.warning(f"Failed to terminate pid={p.pid}: {e}")
-
-        # 2) 일정 시간 기다렸다가, 아직 살아 있는 애들은 kill (SIGKILL)
-        gone, alive = psutil.wait_procs(procs, timeout=10)
-
-        if alive:
-            logger.warning(
-                "Some vLLM processes are still alive after terminate; killing: "
-                + ", ".join(str(p.pid) for p in alive)
-            )
-            for p in alive:
-                try:
-                    p.kill()
-                except psutil.NoSuchProcess:
-                    pass
-                except Exception as e:
-                    logger.error(f"Failed to kill pid={p.pid}: {e}")
-
-            # kill 이후 한번 더 wait (베스트 에포트)
-            psutil.wait_procs(alive, timeout=5)
-
-        # 3) 혹시 포트를 잡고 있는 잔여 프로세스가 있으면 마지막으로 정리
-        try:
-            if self.port is not None:
-                find_and_kill_process(self.port)
+            subprocess.run(["pkill", "-f", "-9", pattern])
+        except subprocess.CalledProcessError as e:
+            logger.error(f"An error occurred: {e}")
         except Exception as e:
-            logger.error(f"find_and_kill_process({self.port}) failed: {e}")
+            logger.error(f"Unexpected error: {e}")
 
-        # Popen 핸들 정리
-        try:
-            self.process.wait(timeout=5)
-        except Exception:
-            pass
+        while True:
+            try:
+                # Check if any process matches the pattern
+                result = subprocess.run(
+                    ["pgrep", "-f", pattern], text=True, capture_output=True
+                )
+                if result.returncode == 0:
+                    logger.warning("Process has reappeared!")
+                    subprocess.run(["pkill", "-f", "-9", pattern])
+                else:
+                    break
+            except subprocess.CalledProcessError as e:
+                logger.error(f"An error occurred while checking the process: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
 
-        self.process = None
-        logger.info("vLLM server stopped and process tree cleaned up.")
+            time.sleep(1)
 
-    # def stop_server(self):
-    #     if self.process is None or self.process.poll() is not None:
-    #         logger.info("Server is not running.")
-    #         return
+        find_and_kill_process(self.port)
 
-    #     self.process.kill()
-    #     time.sleep(3)
-
-    #     # Use pkill to kill processes matching the pattern
-    #     pattern = f"vllm.entrypoints.openai.api_server.*--port {self.port}"
-    #     try:
-    #         subprocess.run(["pkill", "-f", "-9", pattern])
-    #     except subprocess.CalledProcessError as e:
-    #         logger.error(f"An error occurred: {e}")
-    #     except Exception as e:
-    #         logger.error(f"Unexpected error: {e}")
-
-    #     while True:
-    #         try:
-    #             # Check if any process matches the pattern
-    #             result = subprocess.run(
-    #                 ["pgrep", "-f", pattern], text=True, capture_output=True
-    #             )
-    #             if result.returncode == 0:
-    #                 logger.warning("Process has reappeared!")
-    #                 subprocess.run(["pkill", "-f", "-9", pattern])
-    #             else:
-    #                 break
-    #         except subprocess.CalledProcessError as e:
-    #             logger.error(f"An error occurred while checking the process: {e}")
-    #         except Exception as e:
-    #             logger.error(f"Unexpected error: {e}")
-
-    #         time.sleep(1)
-
-    #     find_and_kill_process(self.port)
-
-    #     self.process.kill()
-    #     self.process.wait()
+        self.process.kill()
+        self.process.wait()
